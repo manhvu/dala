@@ -1,417 +1,612 @@
 # Spark DSL Guide
 
-Dala provides a Spark DSL for defining screens declaratively. This guide explains how to use it.
+The Spark DSL lets you define Dala screens declaratively — state as
+attributes, UI as a tree of components — instead of hand-writing `mount/3`
+and `render/1`. Everything is checked at compile time against the component
+registry, so typos fail the build instead of silently rendering wrong UI.
 
-## Overview
+This guide has three parts:
 
-The Spark DSL allows you to define screens using a declarative syntax instead of writing render functions manually. It provides:
+1. **[Mental model](#mental-model)** — how the DSL works, in one page.
+2. **[Quick start](#quick-start-your-first-screen)** and
+   **[Tutorial](#tutorial-a-task-list-screen)** — build real screens step by step.
+3. **[Reference](#reference)** — every feature in detail, plus compiler
+   guarantees, troubleshooting, and migration.
 
-- **Attribute declarations** for screen state
-- **UI component entities** for building the interface
-- **@ref syntax** for referencing assign values in strings
-- **Compile-time verification** for prop validation
-- **Automatic mount function generation**
+## Mental model
 
-## Getting Started
-
-To use the Spark DSL, add `use Dala.Spark.Dsl` (or `use Dala.Screen`) to your screen module:
+A screen module has three parts:
 
 ```elixir
 defmodule MyApp.CounterScreen do
   use Dala.Spark.Dsl
 
+  # 1. STATE — what the screen remembers
   attributes do
     attribute :count, :integer, default: 0
   end
 
+  # 2. VIEW — how the screen looks, as a function of that state
   screen name: :counter do
-    column do
-      gap :space_sm
-      text "Count: @count"
-      button "Increment", on_tap: :increment
+    column padding: 16, gap: 12 do
+      text "Count: @count", text_size: :xl
+      button "+", on_tap: :increment
     end
   end
 
+  # 3. LOGIC — how events change state
   def handle_event(:increment, _params, socket) do
     {:noreply, Dala.Socket.assign(socket, :count, socket.assigns.count + 1)}
   end
 end
 ```
 
-## Attributes
+From these the DSL generates two functions you never write by hand:
 
-Attributes define the screen's state. They are automatically initialized in the generated `mount/3` function.
+| Generated | From | Does |
+|-----------|------|------|
+| `mount/3` | `attributes do` | Initialises every attribute to its default |
+| `render/1` | `screen do` | Builds the UI node tree from current assigns |
 
-### Syntax
+The runtime loop is the same as Phoenix LiveView: an event arrives → your
+`handle_event/3` updates assigns → changed keys trigger a re-render → the
+diff engine patches only what changed on the native side. You never touch
+views, adapters, or encoders.
+
+**The compile-time contract:** every prop you pass must exist in the
+component registry (`Dala.Ui.Component`) — unknown props are *compile
+errors* with Did-you-mean suggestions. Every `@ref` should match a declared
+attribute — undeclared ones warn. Every event atom should have a matching
+`handle_event/3` clause — missing ones warn during `mix compile`.
+
+---
+
+## Quick start: your first screen
+
+### Step 1 — Create the module
 
 ```elixir
-attribute :name, :type, default: value
-```
-
-### Supported Types
-
-- `:integer`
-- `:string`
-- `:boolean`
-- `:float`
-- `:atom`
-- `:list`
-- `:map`
-
-### Example
-
-```elixir
-attributes do
-  attribute :count, :integer, default: 0
-  attribute :message, :string, default: "Hello"
-  attribute :visible, :boolean, default: true
-  attribute :items, :list, default: []
+# lib/my_app/screens/hello_screen.ex
+defmodule MyApp.HelloScreen do
+  use Dala.Spark.Dsl
 end
 ```
 
-## Screen Section
+`use Dala.Spark.Dsl` imports all component macros and registers the
+compile-time checks. (`use Dala.Screen` also works — it delegates here and
+adds the `Dala.Screen` behaviour.)
 
-The `screen` section holds all UI components. It requires a `name:` keyword argument:
-
-```elixir
-screen name: :my_screen do
-  # components go here
-end
-```
-
-## Layout Containers
-
-Container components support nested children via `do...end` blocks. Props are set as function calls inside the block:
-
-### Column (VStack)
+### Step 2 — Declare state
 
 ```elixir
-column do
-  padding :space_md
-  gap :space_sm
-  text "Title"
-  text "Subtitle"
-end
-```
-
-### Row (HStack)
-
-```elixir
-row do
-  gap :space_sm
-  icon "settings"
-  text "Settings"
-end
-```
-
-### Box (ZStack)
-
-Children overlap — useful for overlays:
-
-```elixir
-box do
-  image "bg.jpg"
-  text "Overlay", text_color: :white
-end
-```
-
-### Scroll
-
-```elixir
-scroll do
-  horizontal false
-  show_indicator true
-  padding :space_md
-  text "Long content..."
-end
-```
-
-### Modal
-
-```elixir
-modal do
-  visible true
-  on_dismiss :dismissed
-  text "Modal content"
-end
-```
-
-### Pressable
-
-```elixir
-pressable do
-  on_press :card_tapped
-  text "Tap me"
-end
-```
-
-### SafeArea
-
-```elixir
-safe_area do
-  text "Safe content"
-end
-```
-
-### Card
-
-```elixir
-card variant: :elevated, elevation: 2.0, corner_radius: 12 do
-  text "Card content"
-end
-```
-
-### Badge
-
-```elixir
-badge count: 5, color: :error do
-  icon "notifications"
-end
-```
-
-### BottomSheet
-
-```elixir
-bottom_sheet visible: true, on_dismiss: :dismissed, drag_indicator: true do
-  text "Sheet content"
-end
-```
-
-### Tooltip
-
-```elixir
-tooltip text: "Helpful info", position: :top do
-  icon "help"
-end
-```
-
-## Leaf Components
-
-Leaf components have no children. They accept props as keyword arguments:
-
-### Text
-
-```elixir
-text "Hello, world!"
-text "Count: @count", text_size: :xl, text_color: :on_surface
-text "Title", font_weight: "bold", text_align: :center
-```
-
-### Button
-
-```elixir
-button "Press me", on_tap: :button_pressed
-button "Submit", on_tap: :submit, background: :primary, text_color: :on_primary
-button "Disabled", on_tap: :action, disabled: true
-```
-
-### Icon
-
-```elixir
-icon "settings", text_size: 24, text_color: :on_surface
-icon "chevron_right", on_tap: :navigate
-```
-
-### Image
-
-```elixir
-image "https://example.com/photo.jpg"
-image "logo.png", width: 100, height: 100, resize_mode: :contain
-```
-
-### TextField
-
-```elixir
-text_field placeholder: "Enter name", on_change: :name_changed
-text_field keyboard_type: :email, return_key: :next, on_submit: :next_field
-```
-
-### Toggle
-
-```elixir
-toggle value: true, on_change: :notifications_toggled, text: "Notifications"
-```
-
-### Slider
-
-```elixir
-slider value: 0.5, min_value: 0, max_value: 100, on_change: :volume_changed
-```
-
-### Switch (legacy)
-
-```elixir
-switch value: true, on_toggle: :toggled
-```
-
-### Video
-
-```elixir
-video "https://example.com/clip.mp4", autoplay: true, loop: true
-```
-
-### Other Leaf Components
-
-- `divider()` — horizontal divider line
-- `spacer()` — flexible space (or `spacer size: 20` for fixed)
-- `activity_indicator size: :large, color: :primary` — loading spinner
-- `progress_bar progress: 0.7, color: :primary` — progress bar
-- `status_bar bar_style: :light_content` — status bar control
-- `refresh_control on_refresh: :reload, refreshing: false` — pull-to-refresh
-- `webview "https://elixir-lang.org"` — native web view
-- `camera_preview facing: :front` — live camera feed
-- `native_view MyApp.ChartComponent, id: :revenue_chart` — platform-native component
-- `tab_bar tabs: [%{id: "home", label: "Home"}]` — tab navigation
-- `list :my_list, data: @items` — data-driven list
-- `checkbox value: true, on_change: :agree_toggled, label: "I agree"` — checkbox input
-- `radio selected: true, on_select: :option_a, label: "Option A", group: "choices"` — radio button
-- `chip label: "Filter", variant: :filter, selected: true, on_tap: :chip_tapped` — chip/tag
-- `snackbar message: "Item deleted", action_label: "Undo", on_action: :undo` — snackbar/toast
-- `fab icon: "edit", text: "Compose", on_tap: :compose` — floating action button
-- `icon_button icon: "favorite", on_tap: :favorite_tapped` — icon-only button
-- `segmented_button segments: [%{id: "day", label: "Day"}, %{id: "week", label: "Week"}], selected: "week", on_select: :range_changed` — segmented control
-- `app_bar title: "My App", leading_icon: "back", on_leading: :back_pressed` — top app bar
-- `nav_bar items: [%{id: "home", label: "Home", icon: "home"}], active: "home", on_select: :tab_changed` — bottom nav bar
-- `nav_drawer visible: true, on_dismiss: :dismissed, items: [...], active: "home", on_select: :nav_changed` — nav drawer
-- `nav_rail items: [%{id: "home", label: "Home", icon: "home"}], active: "home", on_select: :rail_changed` — nav rail
-- `menu items: [%{label: "Edit", action: :edit}], visible: true, on_select: :menu_selected` — dropdown menu
-- `date_picker visible: true, on_select: :date_picked, selected_date: "2025-01-15"` — date picker
-- `time_picker visible: true, on_select: :time_picked, selected_time: "09:30"` — time picker
-- `search_bar placeholder: "Search...", on_change: :search_changed, on_submit: :search_submitted` — search bar
-- `carousel :my_carousel, items: @slides, on_page_change: :page_changed` — carousel/slideshow
-
-## @ref Syntax
-
-The `@ref` syntax allows you to reference assign values in strings. It's processed at compile time and replaced with runtime assign access.
-
-### Basic Usage
-
-```elixir
-text "Count: @count"  # Becomes: "Count: " <> to_string(assigns[:count])
-```
-
-### In Props
-
-```elixir
-button "@message", on_tap: :press  # Button text uses the @message assign
-```
-
-## Compile-time Verification
-
-The DSL includes verifiers that check your declarations at compile time:
-
-- Validates that all event handler props (`on_tap`, `on_change`, etc.) are atoms
-- Validates that attribute types are supported
-- Provides helpful error messages for misconfigurations
-
-## Generated Functions
-
-The DSL transformers automatically generate:
-
-### mount/3
-
-Initializes all attributes with their default values. Always generated, even without attributes:
-
-```elixir
-def mount(_params, _session, socket) do
-  socket = Dala.Socket.assign(socket, :count, 0)
-  {:ok, socket}
-end
-```
-
-### render/1
-
-Builds the component tree from your DSL declarations. Returns a list of top-level node maps:
-
-```elixir
-def render(assigns) do
-  [
-    %{
-      type: :column,
-      props: %{gap: :space_sm},
-      children: [
-        %{type: :text, props: %{text: "Count: " <> to_string(assigns[:count])}, children: []}
-      ]
-    }
-  ]
-end
-```
-
-## Event Handling
-
-Event handlers are defined as regular `handle_event/3` functions. The `on_tap`, `on_change`, etc. props reference these handlers by atom name:
-
-```elixir
-def handle_event(:increment, _params, socket) do
-  {:noreply, socket}
-end
-```
-
-## PubSub Subscriptions
-
-The Spark DSL supports declarative PubSub subscriptions via the `pubsub` section. Topics are subscribed when the screen mounts and automatically unsubscribed when the screen terminates.
-
-```elixir
-defmodule MyApp.ChatScreen do
+defmodule MyApp.HelloScreen do
   use Dala.Spark.Dsl
 
   attributes do
-    attribute :messages, :list, default: []
-  end
-
-  pubsub do
-    subscribe "chat:room:123", on_message: :handle_chat
-  end
-
-  screen name: :chat do
-    column do
-      text "Messages: @messages"
-    end
-  end
-
-  def handle_chat({:message, text}, socket) do
-    messages = socket.assigns.messages ++ [text]
-    {:noreply, Dala.Socket.assign(socket, :messages, messages)}
+    attribute :name, :string, default: "world"
   end
 end
 ```
 
-Use `Dala.PubSub` to set up a PubSub instance and broadcast messages:
+Each attribute becomes an assign, initialised automatically. Omitting
+`default:` initialises to `nil`.
+
+### Step 3 — Describe the UI
 
 ```elixir
-# In your app supervision tree:
-children = [
-  {Dala.PubSub, name: MyApp.PubSub}
-]
-
-# Broadcast a message:
-Dala.PubSub.broadcast(MyApp.PubSub, "chat:room:123", {:message, "Hello!"})
+  screen name: :hello do
+    column padding: 24 do
+      text "Hello @name!", text_size: :display
+      button "Say hi", on_tap: :greet
+    end
+  end
 ```
 
-## Integration with Dala.App
+Two syntax rules to internalise now:
 
-Register Spark DSL screens in your app's `navigation/1` using `Dala.App.screens/1`:
+- **Containers take keyword-arg props**: `column padding: 24 do ... end`.
+- **Leaves take positional content + keyword props**: `text "…", text_size: :xl`.
+
+### Step 4 — Handle the event
+
+```elixir
+  def handle_event(:greet, _params, socket) do
+    {:noreply, Dala.Socket.assign(socket, :name, "Dala")}
+  end
+```
+
+Return `{:noreply, socket}`. Any assign change re-renders automatically.
+
+### Step 5 — Register and run
 
 ```elixir
 defmodule MyApp do
   use Dala.App
 
-  def navigation(_) do
-    screens([MyApp.HomeScreen, MyApp.CounterScreen, MyApp.SettingsScreen])
-    stack(:home, root: MyApp.HomeScreen)
+  def navigation(_platform) do
+    screens([MyApp.HelloScreen])
+    stack(:home, root: MyApp.HelloScreen)
   end
 end
 ```
 
-## Migration from Manual Screens
+Then deploy:
 
-To migrate an existing screen to the Spark DSL:
+```bash
+mix dala.push          # BEAM-only push (fast path while iterating)
+Dala.Test.screen(:"my_app_ios@127.0.0.1")   # → MyApp.HelloScreen
+```
 
-1. Add `use Dala.Spark.Dsl` (or keep `use Dala.Screen`) to your module
-2. Move state declarations to `attributes do ... end`
-3. Move render logic to the `screen do ... end` block
-4. Remove the manual `mount/3` and `render/1` functions
-5. Keep `handle_event/3` functions as-is
+That's the whole cycle. The tutorial below adds conditionals, lists,
+derived values, and reusable components on top of it.
+
+---
+
+## Tutorial: a task list screen
+
+We'll build a task list with input, add/remove, and a done toggle. Each step
+compiles on its own — run `mix compile` after each one.
+
+### Step 1 — Model the state
+
+```elixir
+defmodule MyApp.TasksScreen do
+  use Dala.Spark.Dsl
+
+  attributes do
+    attribute :tasks, :list, default: []
+    attribute :draft, :string, default: ""
+  end
+end
+```
+
+Rules of thumb: collections are `:list`, form inputs mirror their text field
+in a `:string`, flags are `:boolean`.
+
+### Step 2 — Static skeleton
+
+```elixir
+  screen name: :tasks do
+    safe_area do
+      scroll padding: 16 do
+        app_bar title: "Tasks"
+
+        column gap: 12 do
+          text "Nothing yet", text_color: :on_surface_variant
+        end
+      end
+    end
+  end
+```
+
+Nesting recipe used everywhere below: `safe_area` → `scroll` → content
+`column`s. `app_bar` gives you the header for free.
+
+### Step 3 — Render each task with `for`
+
+Replace the placeholder column with:
+
+```elixir
+        column gap: 12 do
+          if compute(fn assigns -> assigns[:tasks] == [] end) do
+            empty_state icon: "checkmark.circle",
+              title: "All clear",
+              message: "No tasks yet — add one below"
+          end
+
+          for task <- @tasks, id: task.id do
+            row gap: 12, alignment: :center do
+              checkbox value: task.done,
+                on_change: {:toggle_task, task.id},
+                label: task.title
+
+              icon_button icon: "trash", on_tap: {:remove_task, task.id}
+            end
+          end
+        end
+```
+
+Notes:
+
+- Tasks are atom-keyed maps (`%{id: 1, title: "...", done: false}`) so both
+  `task.done` field access and the keyed `id: task.id` work.
+- The `for` source must be an `@ref`, a literal list, or a `compute/1`
+  expression — arbitrary expressions like `Enum.with_index(@items)` are not
+  evaluated here.
+- Handlers may be atoms **or `{atom, argument}` tuples** — the tuple arrives
+  at `handle_event/3` unchanged, which is how we tell *which* row fired.
+- `id: task.id` gives each row a stable identity so updates patch one row
+  instead of rebuilding the list.
+
+### Step 4 — Add the input row
+
+Above the tasks column:
+
+```elixir
+        row gap: 8, alignment: :center do
+          text_field placeholder: "New task",
+            text: @draft,
+            on_change: :draft_changed
+
+          icon_button icon: "plus.circle.fill", on_tap: :add_task
+        end
+```
+
+### Step 5 — Wire the handlers
+
+```elixir
+  def handle_event(:draft_changed, %{"value" => value}, socket) do
+    {:noreply, Dala.Socket.assign(socket, :draft, value)}
+  end
+
+  def handle_event(:add_task, _params, socket) do
+    draft = String.trim(socket.assigns.draft || "")
+
+    if draft == "" do
+      {:noreply, socket}
+    else
+      task = %{id: System.unique_integer([:positive]), title: draft, done: false}
+
+      {:noreply,
+       socket
+       |> Dala.Socket.assign(:tasks, socket.assigns.tasks ++ [task])
+       |> Dala.Socket.assign(:draft, "")}
+    end
+  end
+
+  def handle_event({:toggle_task, id}, %{"value" => done}, socket) do
+    tasks =
+      Enum.map(socket.assigns.tasks, fn task ->
+        if task.id == id, do: Map.put(task, :done, done), else: task
+      end)
+
+    {:noreply, Dala.Socket.assign(socket, :tasks, tasks)}
+  end
+
+  def handle_event({:remove_task, id}, _params, socket) do
+    tasks = Enum.reject(socket.assigns.tasks, &(&1.id == id))
+    {:noreply, Dala.Socket.assign(socket, :tasks, tasks)}
+  end
+```
+
+Change events deliver their payload as `%{"value" => value}`; taps usually
+carry an empty map unless the component sends more.
+
+### Step 6 — Verify from your terminal
+
+```bash
+mix dala.push
+```
+
+```elixir
+node = :"my_app_ios@127.0.0.1"
+Dala.Test.screen(node)                    # → MyApp.TasksScreen
+Dala.Test.assigns(node)                   # → %{tasks: [], draft: ""}
+Dala.Test.send_message(node, :ignored)    # drive it via taps once deployed
+mcp__ios_simulator__screenshot            # visual check, when layout matters
+```
+
+Prefer `Dala.Test.*` over screenshots for state questions — it reads the
+BEAM directly, exact and fast.
+
+### Step 7 — Extract repeated pieces with `defui`
+
+The task row will grow; keep the loop readable:
+
+```elixir
+  defui task_row(task) do
+    row gap: 12, alignment: :center do
+      checkbox value: task.done,
+        on_change: {:toggle_task, task.id},
+        label: task.title
+
+      icon_button icon: "trash", on_tap: {:remove_task, task.id}
+    end
+  end
+```
+
+…and collapse the call site:
+
+```elixir
+          for task <- @tasks, id: task.id do
+            task_row(task)
+          end
+```
+
+`defui` bodies support the full DSL. Define them **above first use**, in the
+same module.
+
+You now have every core feature in one screen. The rest of this guide is
+reference material.
+
+---
+
+## Reference
+
+## Attributes
+
+```elixir
+attributes do
+  attribute :count, :integer, default: 0
+  attribute :query, :string, default: ""
+  attribute :enabled, :boolean, default: true
+  attribute :ratio, :float, default: 0.5
+  attribute :mode, :atom, default: :idle
+  attribute :items, :list, default: []
+  attribute :meta, :map, default: %{}
+  attribute :token, :string            # defaults to nil
+end
+```
+
+- Types: `:integer`, `:string`, `:boolean`, `:float`, `:atom`, `:list`,
+  `:map`. Anything else fails compilation.
+- The block generates `mount/3`; **do not define `mount/3` yourself**.
+- An `attributes` block without a `screen` still compiles (useful mid-refactor).
+- Assigns set outside the block (e.g. in `handle_info`) work fine — they just
+  don't get automatic defaults.
+
+## The screen block
+
+```elixir
+screen name: :tasks do
+  ...
+end
+```
+
+- `name:` identifies the screen for navigation and debugging. Omit it and it
+  is inferred: `MyApp.TasksScreen` → `:tasks` (suffixes `Screen`, `View`,
+  `Page` are stripped, then snake_cased). A module without `name:` and
+  without inference-friendly naming raises at compile time — name it or
+  pass `name:` explicitly.
+- Top-level entries become the children of the screen's root container.
+- The old `dala do ... end` wrapper is deprecated but still compiles.
+
+## Containers
+
+Props are keyword arguments on the call; children go inside `do...end`.
+Prop-call style inside the block (`column do gap 8 end`) is a compile error
+with a hint.
+
+| Component | Purpose | Notable props |
+|-----------|---------|---------------|
+| `column` | Vertical stack (VStack) | `padding*`, `gap`, `spacing`, `background`, `corner_radius`, `fill_width/height`, `alignment`, `cross_alignment`, `on_tap` |
+| `row` | Horizontal stack (HStack) | same as column |
+| `box` | Overlap / ZStack, sized boxes | `width`, `height`, `min_*`, `max_*`, `alignment` |
+| `scroll` | Scrollable region | `direction`, `shows_indicator`, `padding`, `background`, `on_scroll` |
+| `safe_area` | Notch/home-indicator insets | `edges`, `background` |
+| `modal` | Modal overlay | `visible`, `on_dismiss`, `presentation_style` |
+| `bottom_sheet` | Draggable sheet | `visible`, `on_dismiss`, `drag_indicator` |
+| `pressable` | Tappable wrapper | `on_press`, `on_long_press`, `disabled` |
+| `card` | Elevated surface | `variant`, `elevation`, `corner_radius` |
+| `grid` | Grid layout | `columns`, `gap`, `row_gap` |
+| `badge` | Notification dot wrapper | `count`, `color`, `position` |
+| `tooltip` | Hover/long-press hint | `text`, `position`, `visible` |
+
+All containers accept the accessibility props (`accessibility_id`,
+`accessibility_label`, …).
+
+## Leaves
+
+Positional first argument carries the primary content where one exists
+(`text`, `button`, `icon`, `image`, `video`, `webview`); everything else is
+keyword props.
+
+```elixir
+text "Title", variant: :heading          # :display :heading :title :body :caption :label :overline
+text "@name", selectable: true           # user-copyable
+button "Save", on_tap: :save, disabled: @busy
+icon "trash", text_size: 20, on_tap: :delete
+image "https://…/pic.jpg", resize_mode: :cover, corner_radius: 12
+text_field text: @email, keyboard_type: :email, on_change: :email_changed
+toggle value: @notifications, on_change: :toggled, text: "Notifications"   # label prop is :text
+checkbox value: @agreed, on_change: :agreed, label: "I agree"              # label prop is :label
+slider value: @volume, min_value: 0, max_value: 100, on_change: :volume
+divider()
+spacer size: 20
+activity_indicator size: :large, animating: true
+progress_bar progress: 0.7
+list :history, data: @history, on_end_reached: :load_more, empty_text: "Nothing yet"
+native_view MyChart, id: :revenue         # platform-native component
+```
+
+For the full per-component prop list, generate the reference from the
+registry rather than trusting prose:
+
+```bash
+mix dala.verify --components --markdown-output COMPONENTS.md
+```
+
+Unknown props fail the build with a suggestion, so drift between docs and
+code can't hide anymore.
+
+## State in the UI: `@ref`
+
+Three positions:
+
+```elixir
+text "Count: @count"          # interpolated into any string prop
+button "@confirm_label"       # whole-string ref
+slider value: @volume         # bare ref in any prop position
+```
+
+- Refs resolve against the declared **attributes** plus the framework-provided
+  `@safe_area` map.
+- A ref that matches no attribute emits a **compile warning** ("renders
+  empty") — fix the typo or declare the attribute.
+- Bare *variables* are rejected with a hint (`text mystery` → use
+  `@mystery`). Loop variables are exempt inside their `for` block.
+
+## Conditional UI
+
+```elixir
+if @loading do
+  activity_indicator size: :large
+else
+  text "Ready"
+end
+
+unless @archived do
+  button "Delete", on_tap: :delete
+end
+```
+
+- Conditions accept: an attribute ref (`@loading`), a literal, or a
+  `compute(fn assigns -> ...)` expression.
+- Complex expressions (`Map.get(@x, :k) == nil`) are rejected at compile time
+  with guidance — wrap them in `compute/1`.
+- Branches hold full DSL content and splice into the parent's children;
+  both branches are optional.
+
+## Lists
+
+```elixir
+for item <- @items do
+  text item.label
+end
+
+for item <- @items, id: item.id do
+  task_row(item)
+end
+```
+
+- Inside the block, the loop variable is usable directly (`text item`) and
+  single-level field access works (`item.label`) on atom-keyed maps/structs.
+- **Key your loops** (`id:`) whenever rows change independently — keyed rows
+  get stable ids so the diff engine patches individual rows instead of
+  rebuilding the list.
+- The `<-` source must be an `@ref`, a literal list, or a `compute/1`
+  expression; arbitrary expressions are not evaluated.
+- Nested loops exist but outer variables don't cross inner boundaries
+  (compile error).
+
+## Reusable pieces: `defui`
+
+```elixir
+defui stat_card(label, value) do
+  card padding: 16 do
+    column gap: 4 do
+      text label, variant: :caption
+      text value, variant: :title
+    end
+  end
+end
+
+screen name: :dashboard do
+  column gap: 12 do
+    stat_card("Revenue", "$12.4k")
+    stat_card("Users", "1,203")
+  end
+end
+```
+
+Rules:
+
+- Same module only, defined **above first use** (the parser resolves calls
+  at compile time).
+- Positional args only; wrong arity fails compilation.
+- Bodies see caller `@ref`s and the full DSL.
+- `defui` params can't cross a `for` boundary — compute values before the
+  loop or read them from the item.
+
+## Derived values: `compute/1`
+
+Any 1-arity function in a prop position runs with live assigns at render time:
+
+```elixir
+text text: compute(fn assigns ->
+      case assigns[:score] do
+        nil -> "—"
+        s -> "#{s} pts"
+      end
+    end),
+  text_color: compute(fn assigns -> (assigns[:score] || 0) > 50 && :success || :error end)
+```
+
+Use it for formatting, derived colours, and conditions that need more than a
+bare ref. It replaces the old pattern of pre-computing display strings in
+handlers.
+
+## Events
+
+```elixir
+button "Save", on_tap: :save                     # → handle_event(:save, params, socket)
+icon_button on_tap: {:delete, id}                # → handle_event({:delete, id}, params, socket)
+text_field on_change: :email_changed             # → %{"value" => value} in params
+```
+
+Canonical shapes:
+
+| Event | Handler head |
+|-------|--------------|
+| Tap-style | `handle_event(:save, _params, socket)` |
+| Parameterised tap | `handle_event({:delete, id}, _params, socket)` |
+| Value change | `handle_event(:email_changed, %{"value" => v}, socket)` |
+
+Legacy `{:change, tag, value}` tuples are translated internally by
+`Dala.Event.Bridge`; new code matches the forms above. Missing clauses warn
+at compile time and raise loudly at runtime if actually triggered.
+
+Navigation actions return from handlers:
+
+```elixir
+def handle_event(:open, _p, socket),
+  do: {:noreply, Dala.Socket.push_screen(socket, MyApp.DetailScreen, %{id: 7})}
+
+def handle_event(:back, _p, socket),
+  do: {:noreply, Dala.Screen.pop_screen(socket)}
+```
+
+## Live data: PubSub
+
+```elixir
+pubsub do
+  subscribe "chat:room:123", on_message: :handle_chat
+end
+
+def handle_chat({:message, text}, socket) do
+  messages = socket.assigns.messages ++ [text]
+  {:noreply, Dala.Socket.assign(socket, :messages, messages)}
+end
+```
+
+Subscriptions attach on mount and detach on terminate.
+
+## Compile-time guarantees
+
+| You write | You get | Level |
+|-----------|---------|-------|
+| Prop not in the component's registry list | `unknown prop :weight on :text. Did you mean :font_weight?` | **Error** (build fails) |
+| Prop-call inside a container (`column do gap 8 end`) | `:gap is a prop of :column … pass it as a keyword argument` | **Error** |
+| Unknown component name | `Unknown component :buttn …` | **Error** |
+| Condition that isn't a ref/literal/compute | guidance to wrap in `compute/1` | **Error** |
+| Attribute type outside the seven allowed | invalid-type message | **Error** |
+| `@typo` not among declared attributes | `@typo is not a declared attribute … renders empty` | Warning |
+| `on_tap: :nope` with no clause | missing-handler message after compile | Warning |
+| `handle_event(:x)` never referenced from UI | unused-handler info | Info |
+
+Line numbers point at the offending line. `mix dala.verify --dsl` re-runs
+everything post-compile (`--strict` fails CI on warnings);
+`mix dala.verify --components` prints the catalogue.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Screen shows nothing | `start_root` error swallowed, or every top-level node dropped | Pattern-match `{:ok, _} = Dala.Screen.start_root(...)`; run `mix dala.verify --dsl` |
+| Text shows blank where data should be | Undeclared `@ref` | Check the compile warning; declare the attribute |
+| Toggle/input doesn't show current value | Wrong prop name (`value:` vs `text:`) | Registry-checked now — read the compile error |
+| Changes don't re-render | Handler returned `socket` unwrapped, or assigned nothing | Return `{:noreply, socket}`; assign via `Dala.Socket.assign/3` |
+| Whole list rebuilds on each keystroke | Unkeyed `for` | Add `id: item.id` |
+| Old syntax errors after upgrade | Pre-strictness examples (`dala do`, prop-calls) | Follow the Migration section |
+
+## Migration from manual screens
+
+1. Swap `use Dala.Screen` → `use Dala.Spark.Dsl` (or keep it; both include the DSL).
+2. Move each `Dala.Socket.assign(socket, key, default)` in `mount/3` to an
+   `attribute :key, :type, default: ...` line; delete `mount/3`.
+3. Translate the widget-tree calls in `render/1` into `screen do` syntax;
+   delete `render/1`.
+4. Keep `handle_event/3` and `handle_info/2` as-is.
 
 ### Before
 
@@ -446,11 +641,8 @@ defmodule MyApp.Counter do
     attribute :count, :integer, default: 0
   end
 
-  screen do
-    name :counter
-    column do
-      padding :space_md
-      gap :space_sm
+  screen name: :counter do
+    column padding: :space_md, gap: :space_sm do
       text "Count: @count"
       button "Increment", on_tap: :increment
     end
@@ -461,3 +653,16 @@ defmodule MyApp.Counter do
   end
 end
 ```
+
+## App integration
+
+Register screens once; `screens/1` validates them at compile time:
+
+```elixir
+def navigation(_platform) do
+  screens([MyApp.HelloScreen, MyApp.TasksScreen])
+  stack(:home, root: MyApp.HelloScreen)
+end
+```
+
+Tabbed shells combine stacks under `tab_bar/1`; drawers under `drawer/1`.

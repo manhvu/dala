@@ -117,9 +117,13 @@ defmodule Dala.Gpu.Compute do
   @doc "Return GPU device information."
   @spec device_info() :: map()
   def device_info do
-    case ExCubecl.device_info() do
-      {:ok, info} -> info
-      {:error, _} -> %{gpu: false, name: "unknown", backend: :cpu_fallback}
+    if Code.ensure_loaded?(ExCubecl) do
+      case ExCubecl.device_info() do
+        {:ok, info} -> info
+        {:error, _} -> %{gpu: false, name: "unknown", backend: :cpu_fallback}
+      end
+    else
+      %{gpu: false, name: "ex_cubecl not installed", backend: :unavailable}
     end
   end
 
@@ -134,9 +138,13 @@ defmodule Dala.Gpu.Compute do
   @doc "Return the number of available GPU devices."
   @spec device_count() :: non_neg_integer()
   def device_count do
-    case ExCubecl.device_count() do
-      {:ok, count} -> count
-      {:error, _} -> 0
+    if Code.ensure_loaded?(ExCubecl) do
+      case ExCubecl.device_count() do
+        {:ok, count} -> count
+        {:error, _} -> 0
+      end
+    else
+      0
     end
   end
 
@@ -155,7 +163,11 @@ defmodule Dala.Gpu.Compute do
 
   @doc "Check if the EXCubeCL NIF is loaded and available."
   @spec available?() :: boolean()
-  def available?, do: ExCubecl.available?()
+  def available? do
+    Code.ensure_loaded?(ExCubecl) and ExCubecl.available?()
+  rescue
+    _ -> false
+  end
 
   # ── Buffer management ─────────────────────────────────────────────────────
 

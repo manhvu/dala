@@ -613,7 +613,7 @@ defmodule Dala.Designer.CodegenEdgeCaseTest do
         props: %{},
         children: [
           %{type: :button, props: %{text: "Go", on_tap: :go}, children: []},
-          %{type: :text_field, props: {:on_change, :changed}, children: []}
+          %{type: :text_field, props: %{on_change: :changed}, children: []}
         ]
       }
 

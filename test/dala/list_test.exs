@@ -73,4 +73,23 @@ defmodule Dala.ListTest do
       assert length(result.children) == 2
     end
   end
+
+  describe "facade (Dala.List)" do
+    test "put_renderer/3 stores the renderer in socket.__dala__" do
+      socket = Dala.Socket.new(SomeScreen)
+      renderer = fn item -> %{type: :text, props: %{text: item}, children: []} end
+
+      socket = put_renderer(socket, :items, renderer)
+
+      assert socket.__dala__.list_renderers[:items] == renderer
+    end
+
+    test "default_renderer/1 handles binaries, labelled maps, and fallbacks" do
+      assert %{props: %{text: "plain"}} = default_renderer("plain")
+      assert %{props: %{text: "labelled"}} = default_renderer(%{label: "labelled"})
+      assert %{props: %{text: "titled"}} = default_renderer(%{text: "titled"})
+      assert %{props: %{text: text}} = default_renderer({:tuple, 1})
+      assert text =~ "tuple"
+    end
+  end
 end

@@ -4,83 +4,97 @@ defmodule MlModelsApp.SentimentScreen do
   """
   use Dala.Spark.Dsl
 
-  @examples [
-    "I love this product, it's amazing!",
-    "This is the worst experience ever.",
-    "The movie was okay, nothing special.",
-    "Absolutely fantastic service, highly recommended!",
-    "I'm very disappointed with the quality."
-  ]
+  attributes do
+    attribute(:input_text, :string, default: "")
+    attribute(:result, :map, default: nil)
+    attribute(:loading, :boolean, default: false)
+    attribute(:history, :list, default: [])
+    attribute(:model_loaded, :boolean, default: false)
+    attribute(:model_ref, :integer, default: nil)
+    attribute(:error, :string, default: nil)
+  end
 
-  dala do
-    attribute :input_text, :string, default: ""
-    attribute :result, :map, default: nil
-    attribute :loading, :boolean, default: false
-    attribute :history, :list, default: []
-    attribute :model_loaded, :boolean, default: false
-    attribute :model_ref, :integer, default: nil
-    attribute :error, :string, default: nil
-
-    screen name: :sentiment do
+  screen name: :sentiment do
     column padding: 16, gap: 12 do
       row gap: :space_sm, alignment: :center do
-        button "← Back", on_tap: :go_back
-        text "Sentiment Analysis", text_size: :xl, font_weight: :bold, fill_width: true
+        button("← Back", on_tap: :go_back)
+        text("Sentiment Analysis", text_size: :xl, font_weight: "bold", fill_width: true)
       end
 
-      text "Enter text to analyze:", text_size: :sm
+      text("Enter text to analyze:", text_size: :sm)
 
-      text_field text: @input_text, placeholder: "Type something...", on_change: :text_changed
+      text_field(text: @input_text, placeholder: "Type something...", on_change: :text_changed)
 
-      if loading do
+      if @loading do
         row gap: :space_sm do
           activity_indicator()
-          text "Analyzing..."
+          text("Analyzing...")
         end
       end
 
-      if loading == false do
-        button "Analyze Sentiment", on_tap: :analyze, fill_width: true
+      unless @loading do
+        button("Analyze Sentiment", on_tap: :analyze, fill_width: true)
       end
 
-      if result != nil do
+      if compute(fn assigns -> assigns[:result] != nil end) do
         divider()
-        text "Result", text_size: :lg, font_weight: :bold
+        text("Result", text_size: :lg, font_weight: "bold")
 
         row gap: :space_sm, alignment: :center do
-          text result[:label],
+          text(
+            text:
+              compute(fn assigns ->
+                (assigns[:result] || %{})[:label] || ""
+              end),
             text_size: :xl,
-            font_weight: :bold,
-            text_color: sentiment_color(result[:label])
+            font_weight: "bold",
+            text_color:
+              compute(fn assigns ->
+                case (assigns[:result] || %{})[:label] do
+                  "POSITIVE" -> :success
+                  "NEGATIVE" -> :error
+                  _ -> :default
+                end
+              end)
+          )
 
-          text "#{Float.round(result[:confidence] * 100, 1)}%",
+          text(
+            text:
+              compute(fn assigns ->
+                confidence = (assigns[:result] || %{})[:confidence] || 0.0
+                "#{Float.round(confidence * 100, 1)}%"
+              end),
             text_size: :lg
+          )
         end
 
-        progress_bar progress: result[:confidence]
+        progress_bar(
+          progress: compute(fn assigns -> (assigns[:result] || %{})[:confidence] || 0.0 end)
+        )
       end
 
-      if error != nil do
-        text "Error: #{error}"
+      if compute(fn assigns -> assigns[:error] != nil end) do
+        text(text: compute(fn assigns -> "Error: #{assigns[:error]}" end), text_color: "#ff0000")
       end
 
       divider()
-      text "Try an example:", text_size: :sm
+      text("Try an example:", text_size: :sm)
 
-      button "I love this product, it's amazing!",
+      button("I love this product, it's amazing!",
         on_tap: {:use_example, "I love this product, it's amazing!"},
         fill_width: true
+      )
 
-      button "This is the worst experience ever.",
+      button("This is the worst experience ever.",
         on_tap: {:use_example, "This is the worst experience ever."},
         fill_width: true
+      )
 
-      if history != [] do
+      if compute(fn assigns -> assigns[:history] != [] end) do
         divider()
-        text "History", text_size: :lg, font_weight: :bold
-        list :history_list, data: @history
+        text("History", text_size: :lg, font_weight: "bold")
+        list(:history_list, data: @history)
       end
-    end
     end
   end
 
@@ -166,8 +180,4 @@ defmodule MlModelsApp.SentimentScreen do
 
     {:noreply, socket}
   end
-
-  defp sentiment_color("POSITIVE"), do: :success
-  defp sentiment_color("NEGATIVE"), do: :error
-  defp sentiment_color(_), do: :default
 end

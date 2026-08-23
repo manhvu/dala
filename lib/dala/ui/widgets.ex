@@ -232,6 +232,15 @@ defmodule Dala.Ui.Widgets do
     overline: [text_size: :xs, font_weight: "medium"]
   }
 
+  @doc """
+  The variant preset map (`variant => default props`) used by `apply_variant_defaults/1`.
+
+  Single source of truth for valid `variant:` values — compile-time DSL
+  verification derives its accepted variants from this so the two can't drift.
+  """
+  @spec variant_presets() :: %{atom() => keyword()}
+  def variant_presets, do: @variant_defaults
+
   defp apply_variant_defaults(%{variant: variant} = props) when is_atom(variant) do
     defaults = Map.get(@variant_defaults, variant, [])
 

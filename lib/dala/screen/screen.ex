@@ -634,7 +634,7 @@ defmodule Dala.Screen.Screen do
     if has_changes or is_navigation do
       {tree, active_component_keys} =
         module.render(socket.assigns)
-        |> Dala.Ui.List.expand(list_renderers, self())
+        |> Dala.Ui.List.expand(list_renderers, self(), socket.assigns)
         |> Dala.Ui.NativeView.expand(self(), platform)
 
       Dala.Ui.NativeView.Registry.reconcile(self(), active_component_keys)
@@ -646,7 +646,7 @@ defmodule Dala.Screen.Screen do
       # the intermediate Dala.Node struct allocation. The diff engine
       # handles both maps and structs.
       {:ok, _patches} =
-        Dala.Ui.Renderer.render_patches(
+        Dala.Renderer.render_patches(
           old_tree,
           tree,
           platform,

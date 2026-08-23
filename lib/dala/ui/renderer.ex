@@ -742,5 +742,14 @@ defmodule Dala.Ui.Renderer do
   @spec text_sizes() :: %{atom() => float()}
   def text_sizes, do: @text_sizes
 
+  @doc """
+  Resolve a computed prop value. Props set via `compute(fn assigns -> ... end)`
+  in the Spark DSL arrive as 1-arity functions; call them with the render
+  assigns. Any other value passes through unchanged.
+  """
+  @spec resolve_prop(term(), map()) :: term()
+  def resolve_prop(value, assigns) when is_function(value, 1), do: value.(assigns)
+  def resolve_prop(value, _assigns), do: value
+
   # ── Tree preparation ──────────────────────────────────────────────────────
 end

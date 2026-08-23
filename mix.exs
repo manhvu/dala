@@ -4,7 +4,7 @@ defmodule Dala.MixProject do
   def project do
     [
       app: :dala,
-      version: "0.8.1",
+      version: "0.10.0",
       elixir: "~> 1.18",
       erlang: ">= 27.0",
       start_permanent: Mix.env() == :prod,
@@ -17,7 +17,12 @@ defmodule Dala.MixProject do
       package: package(),
       docs: docs(),
       # Rustler configuration
-      rustler_crates: rustler_crates()
+      rustler_crates: rustler_crates(),
+      dialyzer: [
+        plt_file: {:no_warn, "priv/plts/dala.plt"},
+        # Optional ML deps may not be loaded; calls into them are runtime-guarded
+        ignore_warnings: "dialyzer.ignore-warnings"
+      ]
     ]
   end
 
@@ -83,13 +88,14 @@ defmodule Dala.MixProject do
         "Advanced Topics": ~r/guides\/(liveview|publishing|security|troubleshooting)\.md/
       ],
       groups_for_modules: [
-        Core: [Dala, Dala.App, Dala.Screen, Dala.Socket, Dala.State],
+        Core: [Dala, Dala.App, Dala.Screen, Dala.Socket, Dala.Platform.State],
         UI: [
           Dala.Ui.Widgets,
           Dala.Node,
+          Dala.Diff,
           Dala.Ui.Diff,
+          Dala.Renderer,
           Dala.Ui.Renderer,
-          Dala.Ui.Socket,
           Dala.Ui.Style,
           Dala.Ui.List,
           Dala.Ui.NativeView,
@@ -98,7 +104,6 @@ defmodule Dala.MixProject do
           Dala.Ui.Feedback.Alert,
           Dala.Ui.Sensor.Motion,
           Dala.Ui.Embedded.Webview,
-          Dala.Renderer,
           Dala.Theme,
           Dala.Theme.Obsidian,
           Dala.Theme.Citrus,
@@ -106,19 +111,14 @@ defmodule Dala.MixProject do
         ],
         Navigation: [Dala.Nav.Registry],
         "Device APIs": [
-          Dala.Haptic,
-          Dala.Clipboard,
-          Dala.Share,
+          Dala.Hardware.Haptic,
+          Dala.Platform.Clipboard,
+          Dala.Platform.Share,
           Dala.Permissions,
-          Dala.Biometric,
-          Dala.Location,
-          Dala.Camera,
-          Dala.Photos,
-          Dala.Files,
-          Dala.Audio,
-          Dala.Motion,
-          Dala.Scanner,
-          Dala.Notify
+          Dala.Hardware.Biometric,
+          Dala.Platform.Location,
+          Dala.Hardware.Scanner,
+          Dala.Platform.Notify
         ],
         "Testing & Debugging": [Dala.Test],
         Plugins: [
@@ -176,6 +176,7 @@ defmodule Dala.MixProject do
   defp elixirc_paths(:test),
     do: [
       "lib",
+      "test/support",
       "test/onboarding",
       "test/onboarding/support",
       "dev_tools",
@@ -211,24 +212,25 @@ defmodule Dala.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.2", only: [:dev, :test], runtime: false},
 
-      # ML dependencies (all pure Elixir, compatible with iOS/Android)
-      {:nx, "~> 0.12"},
-      {:emlx, "~> 0.3"},
-      {:polaris, "~> 0.1"},
-      {:scholar, "~> 0.4"},
-      {:nx_signal, "~> 0.3"},
-      {:axon, "~> 0.8"},
+      # JSON encoding (used by plugins, media, webview bridge)
+      {:jason, "~> 1.4"},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
-      # GPU compute runtime (CubeCL via Rust NIFs)
-      {:ex_cubecl, "~> 0.7"},
-      # {:ex_cubecl, path: "../ex_cubecl"}
+      # ML dependencies — optional. Core UI/runtime works without them.
+      # Apps that use Dala.ML / Dala.Gpu.Compute should add these to their
+      # own mix.exs. All calls into these libraries are runtime-guarded.
+      {:nx, "~> 0.12", optional: true},
+      {:emlx, "~> 0.3", optional: true},
+      {:polaris, "~> 0.1", optional: true},
+      {:scholar, "~> 0.4", optional: true},
+      {:nx_signal, "~> 0.3", optional: true},
+      {:axon, "~> 0.8", optional: true},
 
-      # Burn deep learning framework (Nx backend via Rust NIF)
-      {:ex_burn, "~> 0.5"},
-      # {:ex_burn, path: "../ex_burn"}
+      # GPU compute runtime (CubeCL via Rust NIFs) — optional
+      {:ex_cubecl, "~> 0.8", optional: true},
 
-      # JSON encoding (required by ex_cubecl v0.5+ for kernel params)
-      {:jason, "~> 1.4"}
+      # Burn deep learning framework (Nx backend via Rust NIF) — optional
+      {:ex_burn, "~> 0.6", optional: true}
     ]
   end
 end

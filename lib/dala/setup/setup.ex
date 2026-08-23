@@ -45,9 +45,9 @@ defmodule Dala.Setup.Setup do
       {:ok, state} - Bluetooth is available, returns current state
       {:error, reason} - Bluetooth is not available or not configured
   """
-  @spec check_bluetooth() :: {:ok, Dala.Bluetooth.state()} | {:error, term()}
+  @spec check_bluetooth() :: {:ok, Dala.Hardware.Bluetooth.state()} | {:error, term()}
   def check_bluetooth do
-    case apply(Dala.Bluetooth, :state, []) do
+    case apply(Dala.Hardware.Bluetooth, :state, []) do
       :unsupported -> {:error, :bluetooth_not_supported}
       :unauthorized -> {:error, :bluetooth_permission_denied}
       state -> {:ok, state}
@@ -65,7 +65,7 @@ defmodule Dala.Setup.Setup do
   """
   @spec check_wifi() :: {:ok, map()} | {:error, term()}
   def check_wifi do
-    case apply(Dala.WiFi, :current_network, []) do
+    case apply(Dala.Connectivity.Wifi, :current_network, []) do
       %{connected: true} = info -> {:ok, info}
       %{connected: false} -> {:ok, %{connected: false}}
       _ -> {:error, :wifi_not_available}

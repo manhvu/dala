@@ -58,29 +58,37 @@ defmodule Dala.ML do
 
   Call once at app startup. Detects platform and configures the best
   available backend automatically.
+
+  Returns `{:error, :nx_not_available}` if Nx is not a dependency of the app.
   """
-  @spec setup() :: :ok
+  @spec setup() :: :ok | {:error, :nx_not_available}
   def setup do
-    cond do
-      ios?() ->
-        Dala.ML.EMLX.setup()
-        # Also configure ExBurn if available (Metal GPU via Burn)
-        if Dala.ML.Burn.available?() do
-          Dala.ML.Burn.configure!(device: :gpu)
-        end
+    if nx_available?() do
+      cond do
+        ios?() ->
+          if Dala.ML.EMLX.available?(), do: Dala.ML.EMLX.setup()
+          # Also configure ExBurn if available (Metal GPU via Burn)
+          if Dala.ML.Burn.available?() do
+            Dala.ML.Burn.configure!(device: :gpu)
+          end
 
-      android?() ->
-        Nx.default_backend(Nx.BinaryBackend)
-        # Configure ExBurn with Vulkan if available
-        if Dala.ML.Burn.available?() do
-          Dala.ML.Burn.configure!(device: :gpu)
-        end
+          :ok
 
-        :ok
+        android?() ->
+          Nx.default_backend(Nx.BinaryBackend)
+          # Configure ExBurn with Vulkan if available
+          if Dala.ML.Burn.available?() do
+            Dala.ML.Burn.configure!(device: :gpu)
+          end
 
-      true ->
-        Nx.default_backend(Nx.BinaryBackend)
-        :ok
+          :ok
+
+        true ->
+          Nx.default_backend(Nx.BinaryBackend)
+          :ok
+      end
+    else
+      {:error, :nx_not_available}
     end
   end
 
@@ -119,6 +127,12 @@ defmodule Dala.ML do
   rescue
     _ -> false
   end
+
+  @doc """
+  Returns `true` if Nx is loaded (i.e. the app depends on `:nx`).
+  """
+  @spec nx_available?() :: boolean()
+  def nx_available?, do: Code.ensure_loaded?(Nx)
 
   @doc """
   Gets the current ML stack status.
@@ -172,9 +186,13 @@ defmodule Dala.ML do
   """
   @spec verify() :: map()
   def verify do
-    tensor = Nx.tensor([1.0, 2.0, 3.0])
-    sum = Nx.sum(tensor) |> Nx.to_number()
-    %{status: :ok, sum: sum, backend: Dala.Ml.Nx.default_backend()}
+    if nx_available?() do
+      tensor = Nx.tensor([1.0, 2.0, 3.0])
+      sum = Nx.sum(tensor) |> Nx.to_number()
+      %{status: :ok, sum: sum, backend: Dala.Ml.Nx.default_backend()}
+    else
+      %{status: :error, message: "Nx not available — add {:nx, \"~> 0.12\"} to your deps"}
+    end
   rescue
     e -> %{status: :error, message: Exception.message(e)}
   end
@@ -261,52 +279,81 @@ defmodule Dala.ML do
   """
   @spec benchmark(keyword()) :: map()
   def benchmark(opts \\ []) do
-    size = Keyword.get(opts, :size, 100)
-    iterations = Keyword.get(opts, :iterations, 10)
+    if nx_available?() do
+      size = Keyword.get(opts, :size, 100)
+      iterations = Keyword.get(opts, :iterations, 10)
 
-    setup()
+      setup()
 
-    key = Nx.Random.key(42)
-    {a, _} = Nx.Random.uniform(key, shape: {size, size})
-    {b, _} = Nx.Random.uniform(key, shape: {size, size})
+      {a, b} = bench_matrices(size)
 
-    # Warmup
-    Nx.dot(a, b) |> Nx.to_binary()
+      # Warmup
+      Nx.dot(a, b) |> Nx.to_binary()
 
-    {total_us, _} =
-      :timer.tc(fn ->
-        for _ <- 1..iterations do
-          Nx.dot(a, b) |> Nx.to_binary()
+      {total_us, _} =
+        :timer.tc(fn ->
+          for _ <- 1..iterations do
+            Nx.dot(a, b) |> Nx.to_binary()
+          end
+        end)
+
+      avg_ms = total_us / iterations / 1000
+      ops = 2 * size * size * size
+      gflops = ops / (avg_ms / 1000) / 1.0e9
+
+      result = %{
+        time_ms: Float.round(avg_ms, 3),
+        backend: Nx.default_backend(),
+        gflops: Float.round(gflops, 3),
+        matrix_size: size,
+        iterations: iterations
+      }
+
+      # Include Burn benchmark if available and NIF is functional.
+      # ExBurn's Nx fallback can loop indefinitely on incompatible Nx versions,
+      # so isolate it — a broken burn backend must not hang the whole benchmark.
+      if Dala.ML.Burn.available?() and Dala.ML.Burn.nif_loaded?() do
+        case safe_burn_benchmark(size, iterations) do
+          {:ok, burn_result} -> Map.put(result, :burn, burn_result)
+          :error -> result
+        end
+      else
+        result
+      end
+    else
+      %{error: :nx_not_available}
+    end
+  end
+
+  @burn_benchmark_timeout_ms 10_000
+
+  defp safe_burn_benchmark(size, iterations) do
+    parent = self()
+    ref = make_ref()
+
+    pid =
+      spawn(fn ->
+        try do
+          send(parent, {ref, {:ok, benchmark_backend(ExBurn.Backend, size, iterations)}})
+        rescue
+          _ -> send(parent, {ref, :error})
         end
       end)
 
-    avg_ms = total_us / iterations / 1000
-    ops = 2 * size * size * size
-    gflops = ops / (avg_ms / 1000) / 1.0e9
-
-    result = %{
-      time_ms: Float.round(avg_ms, 3),
-      backend: Nx.default_backend(),
-      gflops: Float.round(gflops, 3),
-      matrix_size: size,
-      iterations: iterations
-    }
-
-    # Include Burn benchmark if available and NIF is functional
-    if Dala.ML.Burn.available?() and Dala.ML.Burn.nif_loaded?() do
-      burn_result = benchmark_backend(ExBurn.Backend, size, iterations)
-      Map.put(result, :burn, burn_result)
-    else
-      result
+    receive do
+      {^ref, {:ok, burn_result}} -> {:ok, burn_result}
+      {^ref, :error} -> :error
+    after
+      @burn_benchmark_timeout_ms ->
+        Process.exit(pid, :kill)
+        :error
     end
   end
 
   defp benchmark_backend(backend, size, iterations) do
     Nx.default_backend(backend)
 
-    key = Nx.Random.key(42)
-    {a, _} = Nx.Random.uniform(key, shape: {size, size})
-    {b, _} = Nx.Random.uniform(key, shape: {size, size})
+    {a, b} = bench_matrices(size)
 
     # Warmup
     Nx.dot(a, b) |> Nx.to_binary()
@@ -329,6 +376,14 @@ defmodule Dala.ML do
   after
     # Restore default backend
     Nx.default_backend(Nx.BinaryBackend)
+  end
+
+  # Nx.Random's threefry PRNG breaks under nx >= 0.13 on some backends, and
+  # benchmarking doesn't need randomness — use deterministic values.
+  defp bench_matrices(size) do
+    a = Nx.iota({size, size}, type: :f32) |> Nx.divide(size)
+    b = Nx.iota({size, size}, type: :f32) |> Nx.subtract(1.0)
+    {a, b}
   end
 
   @doc """
@@ -357,5 +412,7 @@ defmodule Dala.ML do
       true ->
         {:error, "Unsupported model type: #{inspect(model)}"}
     end
+  rescue
+    e in UndefinedFunctionError -> {:error, "Dependency not available: #{inspect(e.module)}"}
   end
 end

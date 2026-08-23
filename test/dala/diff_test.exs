@@ -200,7 +200,7 @@ defmodule Dala.DiffTest do
     test "patch_node mask has correct bit for text field" do
       old_props = %{text: "Hello"}
       new_props = %{text: "World"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old_props, new_props)
+      {mask, changed} = Dala.Diff.compute_field_mask(old_props, new_props)
       # text field bit is 0x0001
       assert mask == 0x0001
       assert changed == %{text: "World"}
@@ -209,7 +209,7 @@ defmodule Dala.DiffTest do
     test "patch_node mask has correct bit for title field" do
       old_props = %{title: "Old"}
       new_props = %{title: "New"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old_props, new_props)
+      {mask, changed} = Dala.Diff.compute_field_mask(old_props, new_props)
       # title field bit is 0x0002
       assert mask == 0x0002
       assert changed == %{title: "New"}
@@ -219,7 +219,7 @@ defmodule Dala.DiffTest do
       old_props = %{text: "Hello", color: "blue", padding: 10.0}
       new_props = %{text: "World", color: "red", padding: 10.0}
 
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old_props, new_props)
+      {mask, changed} = Dala.Diff.compute_field_mask(old_props, new_props)
 
       # text (0x0001) + color (0x0004) = 0x0005
       assert mask == 0x0005
@@ -257,7 +257,7 @@ defmodule Dala.DiffTest do
         align_items: :center
       }
 
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old_props, new_props)
+      {mask, changed} = Dala.Diff.compute_field_mask(old_props, new_props)
 
       # All 12 known fields changed: 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100 | 0x0200 | 0x0400 | 0x0800 = 0x0FFF
       assert mask == 0x0FFF
@@ -265,36 +265,36 @@ defmodule Dala.DiffTest do
     end
   end
 
-  describe "Dala.Ui.Diff.compute_field_mask/2" do
+  describe "Dala.Diff.compute_field_mask/2" do
     test "returns zero mask when props are identical" do
       props = %{text: "Hello", color: "blue"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(props, props)
+      {mask, changed} = Dala.Diff.compute_field_mask(props, props)
       assert mask == 0
       assert changed == %{}
     end
 
     test "returns zero mask when both are empty" do
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(%{}, %{})
+      {mask, changed} = Dala.Diff.compute_field_mask(%{}, %{})
       assert mask == 0
       assert changed == %{}
     end
 
     test "detects added props" do
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(%{}, %{text: "New"})
+      {mask, changed} = Dala.Diff.compute_field_mask(%{}, %{text: "New"})
       # text field bit is 0x0001
       assert mask == 0x0001
       assert changed == %{text: "New"}
     end
 
     test "detects removed props" do
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(%{text: "Old"}, %{})
+      {mask, changed} = Dala.Diff.compute_field_mask(%{text: "Old"}, %{})
       # text field was removed -> nil in new, which differs from "Old"
       assert mask == 0x0001
       assert changed == %{text: nil}
     end
 
     test "handles unknown prop keys" do
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(%{custom: "a"}, %{custom: "b"})
+      {mask, changed} = Dala.Diff.compute_field_mask(%{custom: "a"}, %{custom: "b"})
       # Unknown keys have no mask bit but still appear in changed map
       assert mask == 0
       assert changed == %{custom: "b"}
@@ -302,7 +302,7 @@ defmodule Dala.DiffTest do
 
     test "mixes known and unknown prop changes" do
       {mask, changed} =
-        Dala.Ui.Diff.compute_field_mask(
+        Dala.Diff.compute_field_mask(
           %{text: "old", custom: "a"},
           %{text: "new", custom: "b"}
         )
@@ -448,7 +448,7 @@ defmodule Dala.DiffTest do
       }
 
       assert Dala.Node.compute_layout_hash(node_a) !=
-               Dala.Ui.Renderer.compute_layout_hash(node_b)
+               Dala.Renderer.compute_layout_hash(node_b)
     end
   end
 
@@ -587,7 +587,7 @@ defmodule Dala.DiffTest do
 
   describe "Dala.Renderer.encode_set_text/2" do
     test "encodes SET_TEXT command with id and text" do
-      binary = Dala.Ui.Renderer.encode_set_text("my_node", "Hello")
+      binary = Dala.Renderer.encode_set_text("my_node", "Hello")
       # SET_TEXT opcode = 0x06
       <<opcode::8, _id_hash::little-64, text_len::little-16, text::binary>> = binary
       assert opcode == 0x06
@@ -597,7 +597,7 @@ defmodule Dala.DiffTest do
 
     test "encode_set_text produces correct total length" do
       text = "World"
-      binary = Dala.Ui.Renderer.encode_set_text("node1", text)
+      binary = Dala.Renderer.encode_set_text("node1", text)
 
       # 1 byte opcode + 8 bytes id + 2 bytes len + text bytes
       expected_size = 1 + 8 + 2 + byte_size(text)
@@ -605,7 +605,7 @@ defmodule Dala.DiffTest do
     end
 
     test "encode_set_text with empty string" do
-      binary = Dala.Ui.Renderer.encode_set_text("node1", "")
+      binary = Dala.Renderer.encode_set_text("node1", "")
 
       <<opcode::8, _id_hash::little-64, text_len::little-16, text::binary>> = binary
       assert opcode == 0x06
@@ -616,7 +616,7 @@ defmodule Dala.DiffTest do
 
   describe "Dala.Renderer.encode_register_string/2" do
     test "encodes REGISTER_STRING command with string_id and text" do
-      binary = Dala.Ui.Renderer.encode_register_string(42, "Hello")
+      binary = Dala.Renderer.encode_register_string(42, "Hello")
       # REGISTER_STRING opcode = 0x05
       <<opcode::8, string_id::little-16, text_len::little-16, text::binary>> = binary
       assert opcode == 0x05
@@ -627,7 +627,7 @@ defmodule Dala.DiffTest do
 
     test "encode_register_string produces correct total length" do
       text = "World"
-      binary = Dala.Ui.Renderer.encode_register_string(7, text)
+      binary = Dala.Renderer.encode_register_string(7, text)
 
       # 1 byte opcode + 2 bytes string_id + 2 bytes len + text bytes
       expected_size = 1 + 2 + 2 + byte_size(text)
@@ -635,7 +635,7 @@ defmodule Dala.DiffTest do
     end
 
     test "encode_register_string with string_id 0" do
-      binary = Dala.Ui.Renderer.encode_register_string(0, "test")
+      binary = Dala.Renderer.encode_register_string(0, "test")
       <<opcode::8, string_id::little-16, _len::little-16, _text::binary>> = binary
       assert opcode == 0x05
       assert string_id == 0
@@ -644,7 +644,7 @@ defmodule Dala.DiffTest do
 
   describe "Dala.Renderer.encode_event/4" do
     test "encodes EVENT command with target_id, event_type, timestamp, and payload" do
-      binary = Dala.Ui.Renderer.encode_event("btn1", 1, 12_345_678, <<1, 2, 3>>)
+      binary = Dala.Renderer.encode_event("btn1", 1, 12_345_678, <<1, 2, 3>>)
       # EVENT opcode = 0x08
       <<opcode::8, _target_hash::little-64, event_type::8, timestamp::little-64,
         payload_len::little-16, payload::binary>> = binary
@@ -657,7 +657,7 @@ defmodule Dala.DiffTest do
     end
 
     test "encode_event with empty payload" do
-      binary = Dala.Ui.Renderer.encode_event("node1", 0, 0, "")
+      binary = Dala.Renderer.encode_event("node1", 0, 0, "")
 
       <<opcode::8, _target_hash::little-64, event_type::8, timestamp::little-64,
         payload_len::little-16, payload::binary>> = binary
@@ -671,7 +671,7 @@ defmodule Dala.DiffTest do
 
     test "encode_event produces correct total length" do
       payload = <<255, 254, 253, 252>>
-      binary = Dala.Ui.Renderer.encode_event("node1", 2, 99999, payload)
+      binary = Dala.Renderer.encode_event("node1", 2, 99999, payload)
 
       # 1 byte opcode + 8 bytes target + 1 byte event_type + 8 bytes timestamp + 2 bytes len + payload
       expected_size = 1 + 8 + 1 + 8 + 2 + byte_size(payload)
@@ -681,7 +681,7 @@ defmodule Dala.DiffTest do
 
   describe "Dala.Renderer.encode_patch_node/3" do
     test "encodes PATCH_NODE command with id, field_mask, and changed props" do
-      binary = Dala.Ui.Renderer.encode_patch_node("root", 0x0001, %{text: "World"})
+      binary = Dala.Renderer.encode_patch_node("root", 0x0001, %{text: "World"})
       # PATCH_NODE opcode = 0x04
       <<opcode::8, _id_hash::little-64, field_mask::little-16, _rest::binary>> = binary
       assert opcode == 0x04
@@ -690,14 +690,14 @@ defmodule Dala.DiffTest do
 
     test "encode_patch_node with multiple fields in mask" do
       # text (0x0001) + color (0x0004) = 0x0005
-      binary = Dala.Ui.Renderer.encode_patch_node("root", 0x0005, %{text: "Hi", color: "red"})
+      binary = Dala.Renderer.encode_patch_node("root", 0x0005, %{text: "Hi", color: "red"})
       <<opcode::8, _id_hash::little-64, field_mask::little-16, _rest::binary>> = binary
       assert opcode == 0x04
       assert field_mask == 0x0005
     end
 
     test "encode_patch_node with zero mask" do
-      binary = Dala.Ui.Renderer.encode_patch_node("root", 0x0000, %{})
+      binary = Dala.Renderer.encode_patch_node("root", 0x0000, %{})
 
       <<opcode::8, _id_hash::little-64, field_mask::little-16, _rest::binary>> = binary
       assert opcode == 0x04
@@ -705,7 +705,7 @@ defmodule Dala.DiffTest do
     end
   end
 
-  describe "Dala.Ui.Renderer.compute_layout_hash/1" do
+  describe "Dala.Renderer.compute_layout_hash/1" do
     test "computes stable hash for Dala.Node" do
       node = %Dala.Node{
         id: "root",
@@ -714,7 +714,7 @@ defmodule Dala.DiffTest do
         children: []
       }
 
-      hash = Dala.Ui.Renderer.compute_layout_hash(node)
+      hash = Dala.Renderer.compute_layout_hash(node)
       assert is_integer(hash)
       assert hash > 0
     end
@@ -723,8 +723,8 @@ defmodule Dala.DiffTest do
       node_a = %Dala.Node{id: "r", type: :column, props: %{}, children: []}
       node_b = %Dala.Node{id: "r", type: :row, props: %{}, children: []}
 
-      assert Dala.Ui.Renderer.compute_layout_hash(node_a) !=
-               Dala.Ui.Renderer.compute_layout_hash(node_b)
+      assert Dala.Renderer.compute_layout_hash(node_a) !=
+               Dala.Renderer.compute_layout_hash(node_b)
     end
   end
 
@@ -825,14 +825,14 @@ defmodule Dala.DiffTest do
     test "handles both arguments as raw maps" do
       old = %{type: :text, props: %{text: "Old"}, children: []}
       new = %{type: :text, props: %{text: "New"}, children: []}
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
 
     test "handles mixed map and Node struct" do
       old = %Dala.Node{id: "root", type: :text, props: %{text: "Old"}, children: []}
       new = %{type: :text, props: %{text: "New"}, children: []}
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
 
@@ -863,7 +863,7 @@ defmodule Dala.DiffTest do
         children: []
       }
 
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       # Should produce patches reflecting the removal of all 3 children.
       # Patch tuples vary in arity (:remove is 2-tuple, :patch_node is 4-tuple, etc.)
       # so we match on the first element regardless of tuple size.
@@ -898,7 +898,7 @@ defmodule Dala.DiffTest do
       }
 
       # Reordering should not produce patches if content is identical
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       # The diff may produce patches for reordering; at minimum it shouldn't crash
       assert patches == [] or is_list(patches)
     end
@@ -950,28 +950,28 @@ defmodule Dala.DiffTest do
         ]
       }
 
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
 
     test "handles nil props on a node" do
       old = %Dala.Node{id: "root", type: :text, props: nil, children: []}
       new = %Dala.Node{id: "root", type: :text, props: %{text: "Hello"}, children: []}
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
 
     test "handles empty old props and non-empty new props" do
       old = %Dala.Node{id: "root", type: :text, props: %{}, children: []}
       new = %Dala.Node{id: "root", type: :text, props: %{text: "New", title: "T"}, children: []}
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
 
     test "handles non-empty old props and empty new props" do
       old = %Dala.Node{id: "root", type: :text, props: %{text: "Old", title: "T"}, children: []}
       new = %Dala.Node{id: "root", type: :text, props: %{}, children: []}
-      patches = Dala.Ui.Diff.diff(old, new)
+      patches = Dala.Diff.diff(old, new)
       assert length(patches) > 0
     end
   end
@@ -980,7 +980,7 @@ defmodule Dala.DiffTest do
     test "threshold: exactly half known fields changed" do
       old = %{text: "Same", title: "Same", color: "red"}
       new = %{text: "Changed", title: "Changed", color: "red"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old, new)
+      {mask, changed} = Dala.Diff.compute_field_mask(old, new)
       assert mask != 0
       assert map_size(changed) > 0
     end
@@ -988,7 +988,7 @@ defmodule Dala.DiffTest do
     test "all known fields changed" do
       old = %{text: "A", title: "B", color: "C", background: "D"}
       new = %{text: "W", title: "X", color: "Y", background: "Z"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old, new)
+      {mask, changed} = Dala.Diff.compute_field_mask(old, new)
       assert mask != 0
       assert map_size(changed) > 0
     end
@@ -996,7 +996,7 @@ defmodule Dala.DiffTest do
     test "only unknown fields changed" do
       old = %{custom_field: "A"}
       new = %{custom_field: "B"}
-      {mask, changed} = Dala.Ui.Diff.compute_field_mask(old, new)
+      {mask, changed} = Dala.Diff.compute_field_mask(old, new)
       assert mask == 0
       assert map_size(changed) == 1
     end

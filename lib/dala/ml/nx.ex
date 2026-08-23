@@ -14,9 +14,12 @@ defmodule Dala.Ml.Nx do
   1. EMLX (if available) - best for Apple Silicon
   2. Nx.BinaryBackend (pure Elixir fallback)
   """
-  @spec init() :: :emlx | :nx_binary
+  @spec init() :: :emlx | :nx_binary | {:error, :nx_not_available}
   def init do
     cond do
+      not Code.ensure_loaded?(Nx) ->
+        {:error, :nx_not_available}
+
       emlx_available?() ->
         Dala.ML.EMLX.setup()
         :emlx

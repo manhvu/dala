@@ -38,9 +38,9 @@ defmodule Dala.Ui.NativeView.Server do
     props = opts[:props]
     platform = opts[:platform]
 
-    socket = Dala.Socket.new(module, platform: platform)
+    socket = Dala.Socket.new(screen_module(module), platform: platform)
 
-    case module.mount(props, socket) do
+    case component_mount(module, props, socket) do
       {:ok, socket} ->
         Dala.Ui.NativeView.Registry.register(screen_pid, id, module, self())
 
@@ -51,16 +51,67 @@ defmodule Dala.Ui.NativeView.Server do
             0
           end
 
-        {:ok, %{module: module, socket: socket, screen_pid: screen_pid, id: id, handle: handle}}
+        {:ok,
+         %{
+           module: module,
+           socket: socket,
+           screen_pid: screen_pid,
+           id: id,
+           handle: handle,
+           props: props
+         }}
 
       {:error, reason} ->
         {:stop, reason}
     end
   end
 
+  # Plugin components (registered via Dala.Plugin) are opaque to the BEAM:
+  # the native side owns their rendering, keyed by the component type. Their
+  # "module" here is the {:plugin_component, type} tuple.
+  defp plugin_component?({:plugin_component, _type}), do: true
+  defp plugin_component?(_), do: false
+
+  defp screen_module({:plugin_component, type}), do: :"dala_plugin_#{type}"
+  defp screen_module(module), do: module
+
+  defp component_mount(module, props, socket) do
+    if plugin_component?(module), do: {:ok, socket}, else: module.mount(props, socket)
+  end
+
+  defp component_update(module, props, socket) do
+    if plugin_component?(module), do: {:ok, socket}, else: module.update(props, socket)
+  end
+
+  defp component_event(module, event, payload, socket) do
+    if plugin_component?(module) do
+      socket
+    else
+      case module.handle_event(event, payload, socket) do
+        {:noreply, ns} -> ns
+        {:reply, _response, ns} -> ns
+      end
+    end
+  end
+
+  defp handle_info_message(module, message, socket) do
+    if plugin_component?(module) do
+      socket
+    else
+      case module.handle_info(message, socket) do
+        {:noreply, ns} -> ns
+        {:reply, _response, ns} -> ns
+      end
+    end
+  end
+
+  defp component_render(module, assigns, state) do
+    if plugin_component?(module), do: Map.get(state, :props, %{}), else: module.render(assigns)
+  end
+
   @impl GenServer
   def handle_call(:render_props, _from, %{module: module, socket: socket} = state) do
-    {:reply, module.render(socket.assigns), state}
+    {:reply, component_render(module, socket.assigns, state), state}
   end
 
   def handle_call(:get_handle, _from, %{handle: handle} = state) do
@@ -69,9 +120,9 @@ defmodule Dala.Ui.NativeView.Server do
 
   @impl GenServer
   def handle_cast({:update, new_props}, %{module: module, socket: socket} = state) do
-    case module.update(new_props, socket) do
+    case component_update(module, new_props, socket) do
       {:ok, new_socket} ->
-        {:noreply, %{state | socket: new_socket}}
+        {:noreply, %{state | socket: new_socket, props: new_props}}
 
       {:error, reason} ->
         require Logger
@@ -88,11 +139,7 @@ defmodule Dala.Ui.NativeView.Server do
         {:event, event, payload},
         %{module: module, socket: socket, screen_pid: screen_pid, id: id} = state
       ) do
-    new_socket =
-      case module.handle_event(event, payload, socket) do
-        {:noreply, ns} -> ns
-        {:reply, _response, ns} -> ns
-      end
+    new_socket = component_event(module, event, payload, socket)
 
     send(screen_pid, {:component_changed, id, module})
     {:noreply, %{state | socket: new_socket}}
@@ -109,11 +156,7 @@ defmodule Dala.Ui.NativeView.Server do
         _ -> %{}
       end
 
-    new_socket =
-      case module.handle_event(event, payload, socket) do
-        {:noreply, ns} -> ns
-        {:reply, _response, ns} -> ns
-      end
+    new_socket = component_event(module, event, payload, socket)
 
     send(screen_pid, {:component_changed, id, module})
     {:noreply, %{state | socket: new_socket}}
@@ -123,11 +166,7 @@ defmodule Dala.Ui.NativeView.Server do
         message,
         %{module: module, socket: socket, screen_pid: screen_pid, id: id} = state
       ) do
-    new_socket =
-      case module.handle_info(message, socket) do
-        {:noreply, ns} -> ns
-        {:reply, _response, ns} -> ns
-      end
+    new_socket = handle_info_message(module, message, socket)
 
     send(screen_pid, {:component_changed, id, module})
     {:noreply, %{state | socket: new_socket}}

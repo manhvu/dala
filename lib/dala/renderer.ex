@@ -104,4 +104,44 @@ defmodule Dala.Renderer do
   """
   @spec text_sizes() :: map()
   defdelegate text_sizes(), to: Renderer
+
+  @doc """
+  Encode a targeted text update for an existing node.
+
+  Delegates to `Dala.Ui.Renderer.encode_set_text/2`.
+  """
+  @spec encode_set_text(String.t(), String.t()) :: binary()
+  defdelegate encode_set_text(id, text), to: Renderer
+
+  @doc """
+  Encode a string-table registration entry.
+
+  Delegates to `Dala.Ui.Renderer.encode_register_string/2`.
+  """
+  @spec encode_register_string(non_neg_integer(), String.t()) :: binary()
+  defdelegate encode_register_string(string_id, text), to: Renderer
+
+  @doc """
+  Encode a native event frame.
+
+  Delegates to `Dala.Ui.Renderer.encode_event/4`.
+  """
+  @spec encode_event(String.t(), non_neg_integer(), non_neg_integer(), binary()) :: binary()
+  defdelegate encode_event(target_id, event_type, timestamp, payload), to: Renderer
+
+  @doc """
+  Encode a field-mask node patch frame.
+
+  Delegates to `Dala.Ui.Renderer.encode_patch_node/3`.
+  """
+  @spec encode_patch_node(String.t(), non_neg_integer(), map()) :: binary()
+  defdelegate encode_patch_node(id, field_mask, changed_props), to: Renderer
+
+  @doc """
+  Compute a stable layout hash for a node tree.
+
+  Delegates to `Dala.Ui.Renderer.compute_layout_hash/1`.
+  """
+  @spec compute_layout_hash(Dala.Node.t()) :: non_neg_integer()
+  defdelegate compute_layout_hash(node), to: Renderer
 end

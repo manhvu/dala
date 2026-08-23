@@ -4,57 +4,75 @@ defmodule DemoApp.FormsScreen do
   """
   use Dala.Spark.Dsl
 
-  dala do
-    attribute :username, :string, default: ""
-    attribute :password, :string, default: ""
-    attribute :bio, :string, default: ""
-    attribute :age, :integer, default: 25
-    attribute :agree_terms, :boolean, default: false
-    attribute :errors, :map, default: %{}
-
-    screen name: :forms do
-      scroll padding: 16, gap: 16 do
-        text "Registration Form", text_size: :xl, weight: :bold
-        text "Fill out the form below", text_size: :sm, color: "#666"
-        divider()
-
-        # Username
-        text "Username", weight: :bold
-        text_field value: @username, placeholder: "Enter username", on_change: :update_username
-        error_text(Map.get(@errors, :username))
-
-        # Password
-        text "Password", weight: :bold
-        text_field value: @password, placeholder: "Enter password", secure: true, on_change: :update_password
-        error_text(Map.get(@errors, :password))
-
-        # Age slider
-        text "Age: @age", weight: :bold
-        slider value: @age, min_value: 18, max_value: 100, on_change: :update_age
-
-        # Bio
-        text "Bio", weight: :bold
-        text_field value: @bio, placeholder: "Tell us about yourself", multiline: true, rows: 4, on_change: :update_bio
-
-        divider()
-
-        # Terms agreement
-        row spacing: 12, align: :center do
-          toggle value: @agree_terms, on_change: :toggle_terms
-          text "I agree to the terms and conditions", flex: 1
-        end
-        error_text(Map.get(@errors, :terms))
-
-        spacer size: 20
-
-        # Submit button
-        button "Submit", on_tap: :submit, background: "#4A90E2", text_color: "#ffffff"
-      end
-    end
+  attributes do
+    attribute(:username, :string, default: "")
+    attribute(:password, :string, default: "")
+    attribute(:bio, :string, default: "")
+    attribute(:age, :integer, default: 25)
+    attribute(:agree_terms, :boolean, default: false)
+    attribute(:errors, :map, default: %{})
   end
 
-  defp error_text(nil), do: spacer(size: 0)
-  defp error_text(msg), do: text(msg, color: "#ff0000", text_size: :sm)
+  screen name: :forms do
+    scroll padding: 16 do
+      text("Registration Form", text_size: :xl, font_weight: "bold")
+      text("Fill out the form below", text_size: :sm, text_color: "#666")
+      divider()
+
+      # Username
+      text("Username", font_weight: "bold")
+      text_field(text: @username, placeholder: "Enter username", on_change: :update_username)
+
+      # Password
+      text("Password", font_weight: "bold")
+
+      text_field(
+        text: @password,
+        placeholder: "Enter password",
+        secure: true,
+        on_change: :update_password
+      )
+
+      # Age slider
+      text("Age: @age", font_weight: "bold")
+      slider(value: @age, min_value: 18, max_value: 100, on_change: :update_age)
+
+      # Bio
+      text("Bio", font_weight: "bold")
+
+      text_field(
+        text: @bio,
+        placeholder: "Tell us about yourself",
+        max_lines: 4,
+        on_change: :update_bio
+      )
+
+      divider()
+
+      # Terms agreement
+      row spacing: 12, alignment: :center do
+        toggle(value: @agree_terms, on_change: :toggle_terms)
+        text("I agree to the terms and conditions")
+      end
+
+      spacer(size: 20)
+
+      # Validation errors (compute/1 resolves against live assigns)
+      if compute(fn assigns -> map_size(assigns[:errors] || %{}) > 0 end) do
+        text(
+          text:
+            compute(fn assigns ->
+              assigns[:errors] |> Map.values() |> Enum.join(" • ")
+            end),
+          text_color: "#ff0000",
+          text_size: :sm
+        )
+      end
+
+      # Submit button
+      button("Submit", on_tap: :submit, background: "#4A90E2", text_color: "#ffffff")
+    end
+  end
 
   def handle_event(:update_username, %{"value" => value}, socket) do
     {:noreply, Dala.Socket.assign(socket, :username, value)}

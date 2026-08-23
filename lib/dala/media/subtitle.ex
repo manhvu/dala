@@ -43,7 +43,10 @@ defmodule Dala.Media.Subtitle do
         {:error, reason} -> {:halt, {:error, {idx, reason}}}
       end
     end)
-    |> then(fn {:ok, cues} -> {:ok, Enum.reverse(cues)} end)
+    |> then(fn
+      {:ok, cues} -> {:ok, Enum.reverse(cues)}
+      error -> error
+    end)
   end
 
   @doc "Parse WebVTT content into a list of cues."
@@ -166,8 +169,28 @@ defmodule Dala.Media.Subtitle do
                style: %{}
              }}
 
-          error ->
-            error
+          # WebVTT allows an optional cue identifier line before the timing line
+          {:error, _} ->
+            case text_lines do
+              [timing | text_lines] when text_lines != [] ->
+                case parse_vtt_timing(timing) do
+                  {:ok, start_ms, end_ms} ->
+                    {:ok,
+                     %{
+                       id: idx,
+                       start_ms: start_ms,
+                       end_ms: end_ms,
+                       text: Enum.join(text_lines, "\n"),
+                       style: %{}
+                     }}
+
+                  error ->
+                    error
+                end
+
+              _ ->
+                {:error, :invalid_timing}
+            end
         end
 
       _ ->

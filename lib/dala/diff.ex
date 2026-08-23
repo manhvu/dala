@@ -60,4 +60,12 @@ defmodule Dala.Diff do
   def diff(%Dala.Node{} = old, %{} = new_map), do: Diff.diff(old, new_map)
   def diff(%{} = old_map, %Dala.Node{} = new), do: Diff.diff(old_map, new)
   def diff(%{} = old_map, %{} = new_map), do: Diff.diff(old_map, new_map)
+
+  @doc """
+  Compute a field mask and changed props map from old and new props.
+
+  Delegates to `Dala.Ui.Diff.compute_field_mask/2`.
+  """
+  @spec compute_field_mask(map(), map()) :: {non_neg_integer(), map()}
+  defdelegate compute_field_mask(old_props, new_props), to: Diff
 end

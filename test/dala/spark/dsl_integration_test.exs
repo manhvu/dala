@@ -248,7 +248,10 @@ defmodule Dala.Spark.DslIntegrationTest do
       [column_node] = render_result
       [conditional_node] = column_node.children
       assert conditional_node.type == :conditional
-      assert length(conditional_node.then_children) == 1
+      # `unless c do X end` desugars to a conditional whose body is the ELSE
+      # branch (renders when c is falsy) — no negation AST is injected.
+      assert length(conditional_node.else_children) == 1
+      assert conditional_node.then_children == []
     end
 
     test "screen with text variant compiles" do

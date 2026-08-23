@@ -246,8 +246,7 @@ These are the things we've burned ourselves on. Following them isn't optional.
       end
 
       screen name: :counter do
-        column do
-          gap :space_sm
+        column gap: :space_sm do
           text "Count: @count"
           button "Increment", on_tap: :increment
         end
@@ -259,17 +258,17 @@ These are the things we've burned ourselves on. Following them isn't optional.
     end
     ```
 
-    **New in v0.1:**
-    - **Improved error messages**: Verifier now provides clearer error messages
-      for invalid types and missing handlers.
-    - **Fixed PubSub transformer**: Corrected Spark DSL API usage.
-    - **Restored original DSL syntax**: `screen name: :atom do` (keyword arg).
+    **Syntax rules (enforced at compile time):**
+    - **Container props are keyword args** — `column gap: :space_sm do`; prop-call style inside a container block (`column do gap :space_sm end`) is a compile error with a hint.
+    - **Unknown props fail the build** — validated against `Dala.Ui.Component` at parse time with Did-you-mean suggestions; nothing is silently dropped.
+    - **Flat sections** — `attributes do` + `screen name:` at module top level. The old `dala do ... end` wrapper is deprecated (still compiles).
+    - **Screen-name inference** — omit `name:` to derive it from the module (`MyApp.FooScreen` → `:foo`). `attributes` without `screen` also compiles.
 
     Features:
-    - **@ref syntax**: Use `@count` in strings to reference assigns (processed at compile time)
+    - **@ref syntax**: Use `@count` in strings to reference assigns. Undeclared refs emit compile warnings (they render empty). Refs must match a declared attribute or `@safe_area`.
+    - **Control flow**: `if`/`unless`/`for` work in screen blocks and are expanded at render time (`Dala.Ui.List.expand`). Conditions accept `@refs`, literals, or `compute(fn assigns -> ...)`.
+    - **Handler tracking**: missing/unused `handle_event` clauses warn during `mix compile` via `@after_verify` (`Dala.Spark.DslVerifier.handler_warnings/1`).
     - **Auto-generated mount/3**: Initializes attributes with defaults; always generated
-    - **Compile-time verifiers**: Validates prop types and handler references (improved error messages)
-    - **Layout containers**: column, row, box, scroll, modal, pressable, safe_area, card, badge, bottom_sheet, tooltip (with nested children)
     - **Leaf components**: text, button, icon, divider, spacer, text_field, toggle, slider,
       switch, image, video, activity_indicator, progress_bar, status_bar, refresh_control,
       webview, camera_preview, native_view, tab_bar, list, checkbox, radio, chip,
@@ -278,14 +277,36 @@ These are the things we've burned ourselves on. Following them isn't optional.
       empty_state, avatar, stepper
     - **Container components**: column, row, box, scroll, modal, pressable, safe_area,
       card, badge, bottom_sheet, tooltip, grid
-    - **Container props as function calls**: `column do padding(:space_md); gap(:space_sm); ... end`
+    - **Container props as keyword args**: `column padding: :space_md, gap: :space_sm do ... end`
     - **Leaf props as keyword args**: `text "Hello", text_size: :xl`
     - **Conditional rendering**: `if @loading do ... else ... end` and `unless @show do ... end`
-      inside screen blocks, desugared to `:conditional` nodes at compile time
-    - **List rendering**: `for item <- @items do ... end` inside screen blocks,
-      desugared to `:list_render` nodes at compile time
+      inside screen blocks, desugared to `:conditional` nodes at compile time.
+      `unless` bodies land in the conditional's ELSE branch (no negation AST).
+    - **List rendering**: `for item <- @items, id: item.id do ... end` inside screen
+      blocks; keyed rows get stable ids (`<parent>:item-<key>`) so the diff engine
+      (rule #18) patches individual rows. Unkeyed loops fall back to content-hash ids.
+    - **@ref in any prop position**: bare `@count` works in props (`text_size: @size`),
+      not just inside strings. Bare loop vars work too (`text item` in a `for` block).
+    - **compute/1 escape hatch**: `text_size: compute(fn assigns -> assigns[:big] && :xl || :sm end)`
+      — any 1-arity fn prop is resolved with assigns at render time.
+    - **defui local components**:
+      ```elixir
+      defui card_header(title) do
+        row gap: :space_sm do
+          text title, variant: :title
+          spacer()
+        end
+      end
+      ```
+      Define above first use (same module only). Bodies support the full DSL;
+      call sites splice the returned nodes as siblings; usable inside `for` blocks.
+    - **Compile-time verification is strict**: unknown components and bad event
+      handlers emit stderr compiler diagnostics AND raise — broken screens fail
+      the build instead of rendering empty. Runtime `Dala.Spark.DslVerifier.verify_module/1`
+      additionally flags defined-but-unreferenced handlers via beam debug_info.
     - **Text variants**: `text "Hello", variant: :heading` — presets for
       `:display`, `:heading`, `:title`, `:body`, `:caption`, `:label`, `:overline`
+      (derived from `Dala.Ui.Widgets.variant_presets/0`, single source of truth)
     - **Text selectable**: `text @api_key, selectable: true` — allows user to copy text
 
     The extension module (`Dala.Spark.Dsl`) is both a Spark extension and a DSL

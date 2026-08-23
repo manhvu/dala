@@ -93,11 +93,46 @@ defmodule Dala.Ui.List do
   Walk a render tree and expand all `type: :list` nodes into `lazy_list` nodes.
 
   Called internally by `Dala.Screen` before passing the tree to `Dala.Ui.Renderer`.
+  Accepts a single node or the list of root nodes that `render/1` returns.
   `renderers` is the `list_renderers` map from `socket.__dala__`. `pid` is the
   screen process (used as the tap target for row-select events).
   """
-  @spec expand(map(), map(), pid()) :: map()
-  def expand(%{type: :list, props: props} = _node, renderers, pid) do
+  @spec expand(map() | [map()], map(), pid(), map()) :: map() | [map()]
+  def expand(tree, renderers, pid, assigns \\ %{})
+
+  def expand(trees, renderers, pid, assigns) when is_list(trees),
+    do:
+      Enum.flat_map(
+        trees,
+        &(expand(&1, renderers, pid, assigns)
+          |> List.wrap())
+      )
+
+  # DSL `if`/`unless` node — keep only the branch whose condition holds. Its
+  # children splice in place of the conditional itself, so expansion may
+  # return zero or many siblings for this one input slot.
+  def expand(%{type: :conditional} = node, renderers, pid, assigns) do
+    condition =
+      case Map.get(node, :props, %{}) |> Map.get(:condition) do
+        fun when is_function(fun, 1) -> fun.(assigns)
+        other -> other
+      end
+
+    branch =
+      if condition do
+        Map.get(node, :then_children, [])
+      else
+        Map.get(node, :else_children, [])
+      end
+
+    Enum.flat_map(branch, fn child ->
+      child
+      |> expand(renderers, pid, assigns)
+      |> List.wrap()
+    end)
+  end
+
+  def expand(%{type: :list, props: props} = _node, renderers, pid, _assigns) do
     id = Map.fetch!(props, :id)
     items = Map.get(props, :items, [])
     renderer = Map.get(renderers, id, &default_renderer/1)
@@ -120,15 +155,79 @@ defmodule Dala.Ui.List do
     %{type: :lazy_list, props: list_props, children: children}
   end
 
-  def expand(%{type: type, props: props, children: children}, renderers, pid) do
-    %{
-      type: type,
-      props: props,
-      children: Enum.map(children, &expand(&1, renderers, pid))
-    }
+  # DSL `for` node — expand into one copy of children per item.
+  def expand(
+        %{type: :for, props: %{enum: enum, items_fn: items_fn}, children: []} = node,
+        renderers,
+        pid,
+        assigns
+      ) do
+    parent_id = node[:id] || "for"
+
+    items =
+      case enum do
+        {:dala_ref, name} -> Map.get(assigns, name, [])
+        other when is_function(other, 1) -> other.(assigns) || []
+        other when is_list(other) -> other
+        _ -> []
+      end
+
+    children =
+      items
+      |> Enum.flat_map(fn item ->
+        case Function.info(items_fn, :arity) do
+          # Arity 3 receives assigns so deferred defui components inside the
+          # loop can resolve their @ref args.
+          {:arity, 3} -> items_fn.(parent_id, item, assigns)
+          {:arity, 2} -> items_fn.(parent_id, item)
+          {:arity, 1} -> items_fn.(item)
+          _ -> []
+        end
+      end)
+
+    # The for-node becomes a plain column; drop its internal enum/items_fn
+    # props so they never reach the render protocol.
+    expand_children(
+      %{
+        node
+        | type: :column,
+          props: Map.delete(node.props, :enum) |> Map.delete(:items_fn),
+          children: children
+      },
+      renderers,
+      pid,
+      assigns
+    )
   end
 
-  def expand(node, _renderers, _pid), do: node
+  # Rebuild via Map.put so extra node keys (e.g. the `:id` set by keyed
+  # `for` rows for stable diffing) survive expansion. Conditionals inside
+  # children may expand to zero or many siblings, hence flat_map.
+  def expand(%{type: _} = node, renderers, pid, assigns) do
+    children =
+      node
+      |> Map.get(:children, [])
+      |> Enum.flat_map(fn child ->
+        child
+        |> expand(renderers, pid, assigns)
+        |> List.wrap()
+      end)
+
+    Map.put(node, :children, children)
+  end
+
+  def expand(node, _renderers, _pid, _assigns), do: node
+
+  defp expand_children(%{children: children} = node, renderers, pid, assigns) do
+    expanded =
+      Enum.flat_map(children, fn child ->
+        child
+        |> expand(renderers, pid, assigns)
+        |> List.wrap()
+      end)
+
+    %{node | children: expanded}
+  end
 
   # ── Private ──────────────────────────────────────────────────────────────────
 

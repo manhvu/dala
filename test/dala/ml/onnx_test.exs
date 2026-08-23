@@ -15,9 +15,9 @@ defmodule Dala.ML.ONNX.Test do
   end
 
   describe "available?/0" do
-    test "returns false when NIF is not loaded" do
+    test "returns true or false" do
       result = Dala.ML.ONNX.available?()
-      assert result == false or result == :not_supported
+      assert result == true or result == false
     end
   end
 

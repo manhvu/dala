@@ -4,63 +4,98 @@ defmodule MlModelsApp.HomeScreen do
   """
   use Dala.Spark.Dsl
 
-  dala do
-    attribute :downloading, :atom, default: nil
-    attribute :download_status, :map, default: %{}
-    attribute :ml_status, :map, default: %{}
-    attribute :error, :string, default: nil
+  attributes do
+    attribute(:downloading, :atom, default: nil)
+    attribute(:download_status, :map, default: %{})
+    attribute(:ml_status, :map, default: %{})
+    attribute(:error, :string, default: nil)
+  end
 
-    screen name: :home do
+  screen name: :home do
     column padding: 16, gap: 12 do
-      text "ML Models Demo", text_size: :xl, font_weight: :bold
-      text "ONNX Runtime Inference", text_size: :sm
+      text("ML Models Demo", text_size: :xl, font_weight: "bold")
+      text("ONNX Runtime Inference", text_size: :sm)
 
       divider()
 
-      text "Models", text_size: :lg, font_weight: :bold
+      text("Models", text_size: :lg, font_weight: "bold")
 
       row gap: :space_sm, alignment: :center do
-        text "Sentiment Analysis (DistilBERT)", fill_width: true
-        text "Cached", text_size: :sm
+        text("Sentiment Analysis (DistilBERT)", fill_width: true)
+        text("Cached", text_size: :sm)
       end
 
-      if downloading == nil do
-        button "Download Sentiment Model", on_tap: :download_sentiment, fill_width: true
+      if compute(fn assigns -> assigns[:downloading] == nil end) do
+        button("Download Sentiment Model", on_tap: :download_sentiment, fill_width: true)
       end
 
       row gap: :space_sm, alignment: :center do
-        text "Object Detection (YOLOS-tiny)", fill_width: true
-        text "Cached", text_size: :sm
+        text("Object Detection (YOLOS-tiny)", fill_width: true)
+        text("Cached", text_size: :sm)
       end
 
-      if downloading == nil do
-        button "Download Detection Model", on_tap: :download_detection, fill_width: true
+      if compute(fn assigns -> assigns[:downloading] == nil end) do
+        button("Download Detection Model", on_tap: :download_detection, fill_width: true)
       end
 
-      if downloading != nil do
+      if compute(fn assigns -> assigns[:downloading] != nil end) do
         row gap: :space_sm do
           activity_indicator()
-          text "Downloading #{format_model_name(downloading)}..."
+
+          text(
+            text:
+              compute(fn assigns ->
+                name =
+                  case assigns[:downloading] do
+                    :sentiment -> "Sentiment Analysis"
+                    :detection -> "Object Detection"
+                    _ -> "Unknown"
+                  end
+
+                "Downloading #{name}..."
+              end)
+          )
         end
       end
 
-      if error != nil do
-        text "Error: #{error}"
+      if compute(fn assigns -> assigns[:error] != nil end) do
+        text(text: compute(fn assigns -> "Error: #{assigns[:error]}" end), text_color: "#ff0000")
       end
 
       divider()
 
-      text "Screens", text_size: :lg, font_weight: :bold
-      button "Sentiment Analysis →", on_tap: :go_sentiment, fill_width: true
-      button "Object Detection →", on_tap: :go_detection, fill_width: true
+      text("Screens", text_size: :lg, font_weight: "bold")
+      button("Sentiment Analysis →", on_tap: :go_sentiment, fill_width: true)
+      button("Object Detection →", on_tap: :go_detection, fill_width: true)
 
       divider()
 
-      text "Backend Info", text_size: :lg, font_weight: :bold
-      text "Platform: #{format_platform(ml_status[:platform])}"
-      text "Backend: #{inspect(ml_status[:backend])}"
-      text "ONNX available: #{ml_status[:onnx_available] || false}"
-    end
+      text("Backend Info", text_size: :lg, font_weight: "bold")
+
+      text(
+        text:
+          compute(fn assigns ->
+            platform = (assigns[:ml_status] || %{})[:platform]
+            "Platform: #{platform || "unknown"}"
+          end),
+        text_size: :sm
+      )
+
+      text(
+        text:
+          compute(fn assigns ->
+            "Backend: #{inspect((assigns[:ml_status] || %{})[:backend])}"
+          end),
+        text_size: :sm
+      )
+
+      text(
+        text:
+          compute(fn assigns ->
+            "ONNX available: #{(assigns[:ml_status] || %{})[:onnx_available] || false}"
+          end),
+        text_size: :sm
+      )
     end
   end
 
@@ -136,11 +171,4 @@ defmodule MlModelsApp.HomeScreen do
 
     {:noreply, socket}
   end
-
-  defp format_model_name(:sentiment), do: "Sentiment Analysis"
-  defp format_model_name(:detection), do: "Object Detection"
-  defp format_model_name(_), do: "Unknown"
-
-  defp format_platform(nil), do: "unknown"
-  defp format_platform(p), do: to_string(p)
 end

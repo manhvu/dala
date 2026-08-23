@@ -20,7 +20,7 @@ defmodule Dala.Spark.Transformers.GenerateMount do
           default = Map.get(attr, :default)
 
           quote do
-            socket = Dala.Socket.assign(socket, unquote(name), unquote(Macro.escape(default)))
+            socket = Dala.Socket.assign(socket, unquote(name), unquote(default))
           end
         end)
 

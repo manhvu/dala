@@ -81,6 +81,13 @@ defmodule Dala.Ui.NativeView do
   @callback update(props :: map(), socket :: Dala.Socket.t()) ::
               {:ok, Dala.Socket.t()}
 
+  @doc """
+  Render the component's current props.
+
+  Returns a flat **prop map** — not a node. The result is merged into the
+  `:native_view` node's props alongside the injected `:module`, `:id` and
+  `:component_handle` keys before being sent to native.
+  """
   @callback render(assigns :: map()) :: map()
 
   @callback handle_event(event :: String.t(), payload :: map(), socket :: Dala.Socket.t()) ::
@@ -126,7 +133,12 @@ defmodule Dala.Ui.NativeView do
 
   Also expands plugin-based components (registered via Dala.Plugin).
   """
-  @spec expand(map(), pid(), atom()) :: {map(), MapSet.t()}
+  @spec expand(map() | [map()], pid(), atom()) :: {map() | [map()], MapSet.t()}
+  def expand(tree, screen_pid, platform) when is_list(tree) do
+    active = MapSet.new()
+    Enum.map_reduce(tree, active, &walk(&1, screen_pid, platform, &2))
+  end
+
   def expand(tree, screen_pid, platform) do
     active = MapSet.new()
     walk(tree, screen_pid, platform, active)
@@ -136,12 +148,15 @@ defmodule Dala.Ui.NativeView do
     module = props[:module]
     id = props[:id]
 
-    unless is_atom(module) and is_atom(id) do
+    # is_atom(nil) is true — exclude nil explicitly so a missing :module or
+    # :id fails with this error instead of an obscure crash inside the server.
+    unless is_atom(module) and not is_nil(module) and is_atom(id) and not is_nil(id) do
       raise ArgumentError,
             "Dala.Ui.Widgets.native_view requires :module and :id as atoms, got: #{inspect(props)}"
     end
 
     component_pid = ensure_started(screen_pid, id, module, props, platform)
+
     rendered_props = Dala.Ui.NativeView.Server.render_props(component_pid)
     handle = Dala.Ui.NativeView.Server.get_handle(component_pid)
 
